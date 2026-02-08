@@ -73,129 +73,129 @@ const SignInPage = () => {
         <>
             <Header />
             <div className="min-h-screen flex items-center justify-center p-4 pt-20">
-           
-            <div className="absolute opacity-100 pointer-events-none top-0 left-0 w-full h-full -z-10 fade-in animate-in duration-5000 overflow-hidden">
 
-            </div>
-            <div className="absolute pointer-events-none top-0 left-0 w-full h-full -z-10 fade-in animate-in duration-5000 overflow-hidden">
-            
-            </div>
-            <div className="w-full max-w-sm">
-                <Card className="shadow-xl border bg-transparent backdrop-blur-sm">
-                    <CardHeader className="space-y-2 text-center pb-4">
-                        <div className="mx-auto w-10 h-10 bg-muted rounded-lg flex items-center justify-center mb-1">
-                            <div className="w-5 h-5 bg-foreground rounded-sm"></div>
-                        </div>
-                        <CardTitle className="text-xl font-semibold">
-                            Welcome Back
-                        </CardTitle>
-                        <CardDescription className="text-sm text-muted-foreground">
-                            Sign in to your Classroom Energy Saver account
-                        </CardDescription>
-                    </CardHeader>
+                <div className="absolute opacity-100 pointer-events-none top-0 left-0 w-full h-full -z-10 fade-in animate-in duration-5000 overflow-hidden">
 
-                    <CardContent className="space-y-4">
-                        <Button
-                            variant="outline"
-                            disabled={isLoading}
-                            onClick={handleGoogleSignin}
-                            className="w-full h-10 text-sm border hover:bg-accent/50 transition-colors"
-                        >
-                            {loadingType === 'google' ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Connecting...
-                                </>
-                            ) : (
-                                <>
-                                    <GemIcon className="mr-2 h-4 w-4" />
-                                    Continue with Google
-                                </>
-                            )}
-                        </Button>
+                </div>
+                <div className="absolute pointer-events-none top-0 left-0 w-full h-full -z-10 fade-in animate-in duration-5000 overflow-hidden">
 
-                        <div className="relative">
-                            <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t" />
+                </div>
+                <div className="w-full max-w-sm">
+                    <Card className="shadow-xl border bg-transparent backdrop-blur-sm">
+                        <CardHeader className="space-y-2 text-center pb-4">
+                            <div className="mx-auto w-10 h-10 bg-muted rounded-lg flex items-center justify-center mb-1">
+                                <div className="w-5 h-5 bg-foreground rounded-sm"></div>
                             </div>
-                            <div className="relative flex justify-center text-xs">
-                                <span className="bg-card px-2 text-muted-foreground">or</span>
-                            </div>
-                        </div>
+                            <CardTitle className="text-xl font-semibold">
+                                Welcome Back
+                            </CardTitle>
+                            <CardDescription className="text-sm text-muted-foreground">
+                                Sign in to your Classroom Energy Saver account
+                            </CardDescription>
+                        </CardHeader>
 
-                        <form onSubmit={handleEmailSignIn} className="space-y-3">
-                            <div>
-                                <div className="relative">
-                                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    <Input
-                                        type="email"
-                                        placeholder="Email address"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="pl-10 h-9 text-sm"
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="relative">
-                                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    <Input
-                                        type={showPassword ? "text" : "password"}
-                                        placeholder="Password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="pl-10 pr-10 h-9 text-sm"
-                                        required
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                    >
-                                        {showPassword ? (
-                                            <EyeOff className="h-3 w-3" />
-                                        ) : (
-                                            <Eye className="h-3 w-3" />
-                                        )}
-                                    </Button>
-                                </div>
-                            </div>
-
+                        <CardContent className="space-y-4">
                             <Button
-                                type="submit"
-                                className="w-full h-10 text-sm font-medium mt-4"
-                                disabled={isLoading || !email || !password}
+                                variant="outline"
+                                disabled={isLoading}
+                                onClick={handleGoogleSignin}
+                                className="w-full h-10 text-sm border hover:bg-accent/50 transition-colors"
                             >
-                                {loadingType === 'email' ? (
+                                {loadingType === 'google' ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Signing in...
+                                        Connecting...
                                     </>
                                 ) : (
-                                    "Sign In"
+                                    <>
+                                        <GemIcon className="mr-2 h-4 w-4" />
+                                        Continue with Google
+                                    </>
                                 )}
                             </Button>
-                        </form>
 
-                        <div className="text-center pt-2">
-                            <p className="text-xs text-muted-foreground">
-                                Don't have an account?{" "}
-                                <Link
-                                    href="/Signup"
-                                    className="font-medium hover:underline"
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t" />
+                                </div>
+                                <div className="relative flex justify-center text-xs">
+                                    <span className="bg-card px-2 text-muted-foreground">or</span>
+                                </div>
+                            </div>
+
+                            <form onSubmit={handleEmailSignIn} className="space-y-3">
+                                <div>
+                                    <div className="relative">
+                                        <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            type="email"
+                                            placeholder="Email address"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            className="pl-10 h-9 text-sm"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="relative">
+                                        <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            type={showPassword ? "text" : "password"}
+                                            placeholder="Password"
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            className="pl-10 pr-10 h-9 text-sm"
+                                            required
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                        >
+                                            {showPassword ? (
+                                                <EyeOff className="h-3 w-3" />
+                                            ) : (
+                                                <Eye className="h-3 w-3" />
+                                            )}
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <Button
+                                    type="submit"
+                                    className="w-full h-10 text-sm font-medium mt-4"
+                                    disabled={isLoading || !email || !password}
                                 >
-                                    Sign up
-                                </Link>
-                            </p>
-                        </div>
-                    </CardContent>
-                </Card>
+                                    {loadingType === 'email' ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Signing in...
+                                        </>
+                                    ) : (
+                                        "Sign In"
+                                    )}
+                                </Button>
+                            </form>
+
+                            <div className="text-center pt-2">
+                                <p className="text-xs text-muted-foreground">
+                                    Don't have an account?{" "}
+                                    <Link
+                                        href="/Signup"
+                                        className="font-medium hover:underline"
+                                    >
+                                        Sign up
+                                    </Link>
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
-        </div>
         </>
     );
 };
