@@ -88,3 +88,34 @@ model Verification {
   @@index([expiresAt])
   @@map("verifications")
 }
+
+model Classroom {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name          String  @unique // e.g., "Class - 63"
+  isLightOn     Boolean @default(false)
+  arduinoPin    Int?    // Optional: Arduino pin number
+  description   String?
+
+  activityLogs ActivityLog[]
+
+  @@map("classrooms")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  action       String // "ON" or "OFF"
+  classroomId  String
+  classroom    Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  
+  userId       String?
+  userName     String?
+  
+  @@index([classroomId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
