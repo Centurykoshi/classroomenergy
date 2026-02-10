@@ -18,7 +18,7 @@ interface Classroom {
 
 export default function DashboardPage() {
     const router = useRouter();
-    const { data: session } = authClient.useSession();
+    const { data: session, isPending } = authClient.useSession();
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [loading, setLoading] = useState(true);
     const [toggling, setToggling] = useState<string | null>(null);
@@ -30,14 +30,17 @@ export default function DashboardPage() {
     });
 
     useEffect(() => {
+        // Don't redirect if still checking session
+        if (isPending) return;
+
         // Redirect if not logged in
         if (!session) {
             router.push("/Login");
             return;
         }
-        
+
         fetchClassrooms();
-    }, [session, router]);
+    }, [session, isPending, router]);
 
     const fetchClassrooms = async () => {
         try {
@@ -102,6 +105,18 @@ export default function DashboardPage() {
             console.error("Error adding classroom:", error);
         }
     };
+
+    // Show loading state while checking session
+    if (isPending || loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-muted-foreground">Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (!session) {
         return null;
@@ -225,29 +240,26 @@ export default function DashboardPage() {
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ duration: 0.5, delay: index * 0.1 }}
                                         >
-                                            <Card className={`transition-all ${
-                                                classroom.isLightOn
+                                            <Card className={`transition-all ${classroom.isLightOn
                                                     ? "border-primary shadow-lg shadow-primary/20"
                                                     : ""
-                                            }`}>
+                                                }`}>
                                                 <CardHeader>
                                                     <div className="flex items-center justify-between">
                                                         <CardTitle className="flex items-center gap-2">
                                                             <Lightbulb
-                                                                className={`w-5 h-5 ${
-                                                                    classroom.isLightOn
+                                                                className={`w-5 h-5 ${classroom.isLightOn
                                                                         ? "text-yellow-500 fill-yellow-500"
                                                                         : "text-muted-foreground"
-                                                                }`}
+                                                                    }`}
                                                             />
                                                             {classroom.name}
                                                         </CardTitle>
                                                         <div
-                                                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                                                classroom.isLightOn
+                                                            className={`px-2 py-1 rounded-full text-xs font-semibold ${classroom.isLightOn
                                                                     ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                                                                     : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400"
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {classroom.isLightOn ? "ON" : "OFF"}
                                                         </div>
@@ -266,18 +278,17 @@ export default function DashboardPage() {
                                                         <Button
                                                             onClick={() => toggleLight(classroom.id, classroom.isLightOn)}
                                                             disabled={toggling === classroom.id}
-                                                            className={`w-full ${
-                                                                classroom.isLightOn
+                                                            className={`w-full ${classroom.isLightOn
                                                                     ? "bg-red-600 hover:bg-red-700"
                                                                     : "bg-green-600 hover:bg-green-700"
-                                                            }`}
+                                                                }`}
                                                         >
                                                             <Power className="w-4 h-4 mr-2" />
                                                             {toggling === classroom.id
                                                                 ? "Processing..."
                                                                 : classroom.isLightOn
-                                                                ? "Turn OFF"
-                                                                : "Turn ON"}
+                                                                    ? "Turn OFF"
+                                                                    : "Turn ON"}
                                                         </Button>
                                                     </div>
                                                 </CardContent>

@@ -132,7 +132,7 @@ export default function AboutPage() {
                                 >
                                     <div className="relative w-48 h-48 mx-auto mb-6 rounded-full overflow-hidden border-4 border-primary">
                                         <Image
-                                            src="/piyush.jpeg"
+                                            src="/piyushf.jpg"
                                             alt="Piyush"
                                             fill
                                             className="object-cover"

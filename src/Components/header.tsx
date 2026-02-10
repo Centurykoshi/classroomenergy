@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 
 export function Header() {
     const router = useRouter();
-    const { data: session } = authClient.useSession();
+    const { data: session, isPending } = authClient.useSession();
 
     const handleLogout = async () => {
         await authClient.signOut();
@@ -71,7 +71,9 @@ export function Header() {
                             About
                         </motion.a>
 
-                        {session?.user ? (
+                        {isPending ? (
+                            <div className="h-9 w-9 animate-pulse bg-muted rounded-full" />
+                        ) : session?.user ? (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <motion.button
@@ -108,7 +110,7 @@ export function Header() {
                                             <span>Dashboard</span>
                                         </Link>
                                     </DropdownMenuItem>
-                            
+
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                         onClick={handleLogout}
