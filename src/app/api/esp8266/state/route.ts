@@ -20,6 +20,7 @@ export async function GET() {
 
         // Format response for ESP8266
         const response = classrooms.map(classroom => ({
+            id: classroom.id,
             name: classroom.name,
             pin: classroom.arduinoPin || 0,
             state: classroom.isLightOn ? 1 : 0

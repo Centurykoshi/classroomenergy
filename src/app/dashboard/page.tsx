@@ -7,6 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/Com
 import { Button } from "@/Components/ui/button";
 import { authClient } from "@/lib/authclient";
 import { useRouter } from "next/navigation";
+import GobackButton from "./GoBackButton";
+
+interface ActivityLog {
+    id: string;
+    createdAt: string;
+    action: string;
+    userId: string | null;
+    userName: string | null;
+}
 
 interface Classroom {
     id: string;
@@ -14,6 +23,7 @@ interface Classroom {
     isLightOn: boolean;
     description: string | null;
     arduinoPin: number | null;
+    activityLogs?: ActivityLog[];
 }
 
 export default function DashboardPage() {
@@ -47,7 +57,24 @@ export default function DashboardPage() {
             const response = await fetch("/api/classrooms");
             if (response.ok) {
                 const data = await response.json();
-                setClassrooms(data);
+                
+                // Fetch activity logs for each classroom
+                const classroomsWithLogs = await Promise.all(
+                    data.map(async (classroom: Classroom) => {
+                        try {
+                            const logsResponse = await fetch(`/api/classrooms/${classroom.id}/logs?limit=5`);
+                            if (logsResponse.ok) {
+                                const logs = await logsResponse.json();
+                                return { ...classroom, activityLogs: logs };
+                            }
+                        } catch (error) {
+                            console.error(`Error fetching logs for classroom ${classroom.id}:`, error);
+                        }
+                        return classroom;
+                    })
+                );
+                
+                setClassrooms(classroomsWithLogs);
             }
         } catch (error) {
             console.error("Error fetching classrooms:", error);
@@ -76,6 +103,19 @@ export default function DashboardPage() {
                 setClassrooms(classrooms.map(c =>
                     c.id === classroomId ? { ...c, isLightOn: !currentState } : c
                 ));
+
+                // Refresh activity logs for this classroom
+                try {
+                    const logsResponse = await fetch(`/api/classrooms/${classroomId}/logs?limit=5`);
+                    if (logsResponse.ok) {
+                        const logs = await logsResponse.json();
+                        setClassrooms(prev => prev.map(c =>
+                            c.id === classroomId ? { ...c, activityLogs: logs } : c
+                        ));
+                    }
+                } catch (error) {
+                    console.error("Error refreshing activity logs:", error);
+                }
             }
         } catch (error) {
             console.error("Error toggling light:", error);
@@ -124,6 +164,11 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-background pt-24 pb-12 px-4">
+
+            <div className="absolute top-10 left-1/2 cursor-pointer">
+
+            <GobackButton Prop={{value : "HomePage", url : "/"}} />
+            </div>
             <div className="max-w-7xl mx-auto">
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -257,8 +302,8 @@ export default function DashboardPage() {
                                                         </CardTitle>
                                                         <div
                                                             className={`px-2 py-1 rounded-full text-xs font-semibold ${classroom.isLightOn
-                                                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                                                    : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                                                                    ? "bg-primary text-secondary dark:bg-primary/30 dark:text-green-400"
+                                                                    : "bg-secondary-100 text-primary dark:bg-gray-800 dark:text-gray-400"
                                                                 }`}
                                                         >
                                                             {classroom.isLightOn ? "ON" : "OFF"}
@@ -269,7 +314,7 @@ export default function DashboardPage() {
                                                     </CardDescription>
                                                 </CardHeader>
                                                 <CardContent>
-                                                    <div className="space-y-3">
+                                                    <div className="space-y-4">
                                                         {classroom.arduinoPin && (
                                                             <div className="text-sm text-muted-foreground">
                                                                 Pin: {classroom.arduinoPin}
@@ -279,8 +324,8 @@ export default function DashboardPage() {
                                                             onClick={() => toggleLight(classroom.id, classroom.isLightOn)}
                                                             disabled={toggling === classroom.id}
                                                             className={`w-full ${classroom.isLightOn
-                                                                    ? "bg-red-600 hover:bg-red-700"
-                                                                    : "bg-green-600 hover:bg-green-700"
+                                                                    ? "bg-foreground hover:bg-foreground"
+                                                                    : "bg-primary hover:bg-primary/80"
                                                                 }`}
                                                         >
                                                             <Power className="w-4 h-4 mr-2" />
@@ -290,6 +335,58 @@ export default function DashboardPage() {
                                                                     ? "Turn OFF"
                                                                     : "Turn ON"}
                                                         </Button>
+
+                                                        {/* Activity History */}
+                                                        <div className="mt-6 pt-4 border-t">
+                                                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                                                <History className="w-4 h-4" />
+                                                                Activity History
+                                                            </h4>
+                                                            {classroom.activityLogs && classroom.activityLogs.length > 0 ? (
+                                                                <div className="space-y-2 max-h-64 overflow-y-auto">
+                                                                    {classroom.activityLogs.map((log) => (
+                                                                        <div
+                                                                            key={log.id}
+                                                                            className="text-xs bg-muted rounded px-3 py-2 flex items-center justify-between"
+                                                                        >
+                                                                            <div className="flex-1">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span
+                                                                                        className={`inline-block px-2 py-0.5 rounded font-semibold text-xs ${
+                                                                                            log.action === "ON"
+                                                                                                ? "bg-green-500/20 text-green-700 dark:text-green-400"
+                                                                                                : "bg-red-500/20 text-red-700 dark:text-red-400"
+                                                                                        }`}
+                                                                                    >
+                                                                                        {log.action}
+                                                                                    </span>
+                                                                                    <span className="text-muted-foreground">
+                                                                                        {new Date(log.createdAt).toLocaleTimeString([], {
+                                                                                            hour: "2-digit",
+                                                                                            minute: "2-digit",
+                                                                                            second: "2-digit"
+                                                                                        })}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="text-xs text-muted-foreground mt-1">
+                                                                                    By: {log.userName || "Unknown"}
+                                                                                </div>
+                                                                                <div className="text-xs text-muted-foreground">
+                                                                                    {new Date(log.createdAt).toLocaleDateString([], {
+                                                                                        month: "short",
+                                                                                        day: "numeric"
+                                                                                    })}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-xs text-muted-foreground text-center py-3">
+                                                                    No activity yet
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </CardContent>
                                             </Card>
