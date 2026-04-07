@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 export function HomeSection() {
     return (
@@ -49,7 +50,9 @@ export function HomeSection() {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                         >
+                            <Link href={"/dashboard"}>
                             Get Started
+                            </Link>
                         </motion.button>
                     </motion.div>
                 </motion.div>
