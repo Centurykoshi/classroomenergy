@@ -2,129 +2,83 @@
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 
-// TEST MODE - Set to true for 10-second test run
-#define TEST_MODE true
-
+// ============================
 // WiFi credentials
-const char* ssid = "vivo Y22";
-const char* password = "09876543";
 
-// Server URL
-const char* serverUrl = "http://10.179.251.249:3000/api/esp8266/state";
 
-// Polling interval (milliseconds) - shorter in test mode
-const unsigned long POLL_INTERVAL = TEST_MODE ? 1000 : 3000;
+// ============================
+const char* ssid = "Airtel_PiyushRicha";
+const char* password = "richapiyush";
+
+// ============================
+// Server URLs
+// ============================
+const char* serverUrl = "http://192.168.1.6:3000/api/esp8266/state";                 // GET
+const char* motionUpdateUrl = "http://192.168.1.6:3000/api/classrooms/motion-update"; // POST
+
+// ============================
+// Timings
+// ============================
+const unsigned long POLL_INTERVAL = 3000;           // 3 sec
+const unsigned long MOTION_TIMEOUT = 30000;         // 30 sec
+
+// ============================
+// Motion sensor
+// ============================
+#define MOTION_SENSOR_PIN D2 // GPIO4
+#define MOTION_DETECTION_ENABLED false  // Set to true when sensor is connected
+
 unsigned long lastPollTime = 0;
-
-// Motion sensor configuration
-#define MOTION_SENSOR_PIN D2  // GPIO 4 - PIR motion sensor
-#define MOTION_TIMEOUT TEST_MODE ? 5000 : 30000  // 5 seconds in test mode, 30 seconds normally
 unsigned long lastMotionTime = 0;
-bool motionDetected = false;
-bool wasMotionDetected = false;
 
-// Test mode timing
-unsigned long testModeStartTime = 0;
-const unsigned long TEST_DURATION = 10000;  // 10 seconds
+bool motionDetected = false;     // current raw/instant motion status (true only while sensor is high)
+bool wasMotionDetected = false;  // "motion session" active until timeout
 
-//work 
-
-// Store relay pin states and classroom IDs
+// ============================
+// Classroom / relay state
+// ============================
 const int MAX_CLASSROOMS = 10;
+
 int relayPins[MAX_CLASSROOMS];
 String classroomIds[MAX_CLASSROOMS];
-bool relayStates[MAX_CLASSROOMS];
+bool relayStates[MAX_CLASSROOMS]; // true = ON, false = OFF
+bool pinInitialized[MAX_CLASSROOMS];
+bool forceOffState[MAX_CLASSROOMS];  // User-initiated force OFF flag
+unsigned long forceOffTimes[MAX_CLASSROOMS];  // Timestamp of force OFF
+
 int classroomCount = 0;
 
-// Manual override tracking - when user manually turns lights OFF, prevent motion from turning back ON
-unsigned long manualOverrideTimes[MAX_CLASSROOMS];  // Timestamp when manual override was activated
-const unsigned long MANUAL_OVERRIDE_DURATION = 300000;  // 5 minutes - override active for this duration
-bool manualOverrideActive[MAX_CLASSROOMS];  // Track if manual override is currently active
-
-// Motion update URL
-const char* motionUpdateUrl = "http://10.179.251.249:3000/api/classrooms/motion-update";
-
-void setup() {
-  Serial.begin(115200);
-  delay(100);
-
-  Serial.println("\n\nClassroom Energy Control System with Motion Sensor");
-  Serial.println("===================================================");
-
-  if (TEST_MODE) {
-    Serial.println("⚠️  TEST MODE ENABLED - 10 Second Test Run");
-    Serial.println("Motion timeout: 5 seconds | Poll interval: 1 second | Calibration: 2 seconds");
-  }
-
-  // Initialize motion sensor pin as INPUT
-  pinMode(MOTION_SENSOR_PIN, INPUT);
-  Serial.println("Motion Sensor initialized on pin D2 (GPIO 4)");
-  
-  // Debug: Check initial sensor reading
-  delay(100);
-  int initialReading = digitalRead(MOTION_SENSOR_PIN);
-  Serial.printf("Initial Motion Sensor Reading: %d\n", initialReading);
-  
-  // Shorter calibration in test mode
-  unsigned long calibrationTime = TEST_MODE ? 2000 : 60000;
-  Serial.printf("Waiting %lu milliseconds for sensor calibration...\n", calibrationTime);
-  Serial.println("DO NOT move the sensor during calibration!");
-  delay(calibrationTime);
-
-  // Initialize manual override arrays
-  for (int i = 0; i < MAX_CLASSROOMS; i++) {
-    manualOverrideActive[i] = false;
-    manualOverrideTimes[i] = 0;
-  }
-
-  testModeStartTime = millis();
-  connectToWiFi();
+// ============================
+// Helpers
+// ============================
+bool isValidRelayPin(int pin) {
+  // Keep simple check; adjust if your hardware has specific allowed pins only.
+  return pin > 0;
 }
 
-void loop() {
-  // Check if test mode duration has elapsed
-  if (TEST_MODE && (millis() - testModeStartTime > TEST_DURATION)) {
-    static bool testComplete = false;
-    if (!testComplete) {
-      Serial.println("\n╔════════════════════════════════════════╗");
-      Serial.println("║        TEST COMPLETED (10 seconds)     ║");
-      Serial.println("╚════════════════════════════════════════╝");
-      testComplete = true;
-    }
-    delay(100);  // Slow down loop to reduce spam
-    return;  // Stop execution after test
-  }
-
-  // Reconnect WiFi if disconnected
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnected. Reconnecting...");
-    connectToWiFi();
-  }
-
-  // Check motion sensor continuously
-  checkMotionSensor();
-
-  // Poll server at regular intervals
-  if (millis() - lastPollTime >= POLL_INTERVAL) {
-    lastPollTime = millis();
-    pollServerState();
-  }
+void relayOn(int pin) {
+  // Active-LOW relay: LOW means ON
+  digitalWrite(pin, LOW);
 }
 
-// Connect to WiFi
+void relayOff(int pin) {
+  // Active-LOW relay: HIGH means OFF
+  digitalWrite(pin, HIGH);
+}
+
 void connectToWiFi() {
   Serial.print("Connecting to WiFi: ");
   Serial.println(ssid);
-  
+
   WiFi.begin(ssid, password);
-  
+
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
     Serial.print(".");
     attempts++;
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi connected!");
     Serial.print("IP address: ");
@@ -134,73 +88,7 @@ void connectToWiFi() {
   }
 }
 
-// Check motion sensor and control lights
-void checkMotionSensor() {
-  bool currentMotion = digitalRead(MOTION_SENSOR_PIN);
-
-  // Debug: Print sensor reading every 3 seconds
-  static unsigned long lastDebugTime = 0;
-  if (millis() - lastDebugTime > 3000) {
-    Serial.printf("DEBUG - Motion Sensor Reading: %d (0=No Motion, 1=Motion Detected)\n", currentMotion);
-    Serial.printf("DEBUG - wasMotionDetected: %d, motionDetected: %d\n", wasMotionDetected, motionDetected);
-    lastDebugTime = millis();
-  }
-
-  // Only trigger on motion CHANGE from false to true (actual motion event)
-  if (currentMotion && !wasMotionDetected) {
-    // Motion just detected (transition from no motion to motion)
-    Serial.println("Motion DETECTED! Turning lights ON");
-    lastMotionTime = millis();
-    turnOnAllLights();
-    wasMotionDetected = true;
-    motionDetected = true;
-  } else if (currentMotion) {
-    // Motion still happening - reset timeout
-    lastMotionTime = millis();
-    motionDetected = true;
-  } else {
-    // No motion signal from sensor
-    motionDetected = false;
-    
-    // Check if timeout has expired
-    if (millis() - lastMotionTime > MOTION_TIMEOUT && wasMotionDetected) {
-      Serial.println("Motion timeout! No movement for 30 seconds, turning lights OFF");
-      turnOffAllLights();
-      wasMotionDetected = false;
-    }
-  }
-}
-
-// Turn all lights ON
-void turnOnAllLights() {
-  for (int i = 0; i < classroomCount; i++) {
-    if (relayPins[i] > 0 && !relayStates[i]) {
-      digitalWrite(relayPins[i], 0);  // 0 = Relay activates (ON) for active-LOW relay
-      relayStates[i] = true;
-      Serial.printf("Light ON - Pin: %d\n", relayPins[i]);
-      
-      // Notify server about motion-triggered light ON
-      notifyServerMotionState(classroomIds[i], "ON", relayPins[i]);
-    }
-  }
-}
-
-// Turn all lights OFF
-void turnOffAllLights() {
-  for (int i = 0; i < classroomCount; i++) {
-    if (relayPins[i] > 0 && relayStates[i]) {
-      digitalWrite(relayPins[i], 1);  // 1 = Relay deactivates (OFF) for active-LOW relay
-      relayStates[i] = false;
-      Serial.printf("Light OFF - Pin: %d\n", relayPins[i]);
-      
-      // Notify server about motion-triggered light OFF
-      notifyServerMotionState(classroomIds[i], "OFF", relayPins[i]);
-    }
-  }
-}
-
-// Notify server about motion-triggered state change
-void notifyServerMotionState(String classroomId, const char* action, int pin) {
+void notifyServerMotionState(const String& classroomId, const char* action, int pin) {
   if (WiFi.status() != WL_CONNECTED) return;
 
   WiFiClient client;
@@ -211,27 +99,92 @@ void notifyServerMotionState(String classroomId, const char* action, int pin) {
   http.begin(client, motionUpdateUrl);
   http.addHeader("Content-Type", "application/json");
 
-  // Create JSON payload
   DynamicJsonDocument doc(256);
   doc["classroomId"] = classroomId;
   doc["action"] = action;
   doc["pin"] = pin;
 
-  String jsonPayload;
-  serializeJson(doc, jsonPayload);
+  String payload;
+  serializeJson(doc, payload);
 
-  int httpCode = http.POST(jsonPayload);
-
+  int httpCode = http.POST(payload);
   if (httpCode > 0) {
-    Serial.printf("Server response code: %d\n", httpCode);
+    Serial.printf("Motion update response code: %d\n", httpCode);
   } else {
-    Serial.printf("HTTP POST failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("Motion update POST failed: %s\n", http.errorToString(httpCode).c_str());
   }
 
   http.end();
 }
 
-// Poll server for classroom states
+void turnOnAllLightsFromMotion() {
+  for (int i = 0; i < classroomCount; i++) {
+    if (!isValidRelayPin(relayPins[i])) continue;
+    if (forceOffState[i]) continue;  // respect user force OFF
+    if (!relayStates[i]) {
+      relayOn(relayPins[i]);
+      relayStates[i] = true;
+      Serial.printf("Light ON (motion) - Pin: %d\n", relayPins[i]);
+      notifyServerMotionState(classroomIds[i], "ON", relayPins[i]);
+    }
+  }
+}
+
+void turnOffAllLightsFromMotionTimeout() {
+  for (int i = 0; i < classroomCount; i++) {
+    if (!isValidRelayPin(relayPins[i])) continue;
+    if (relayStates[i]) {
+      relayOff(relayPins[i]);
+      relayStates[i] = false;
+      Serial.printf("Light OFF (motion timeout) - Pin: %d\n", relayPins[i]);
+      notifyServerMotionState(classroomIds[i], "OFF", relayPins[i]);
+    }
+  }
+}
+
+void checkMotionSensor() {
+  // Motion detection disabled - sensor not connected
+  if (!MOTION_DETECTION_ENABLED) {
+    if (wasMotionDetected) {
+      wasMotionDetected = false;
+      motionDetected = false;
+    }
+    return;
+  }
+
+  bool currentMotion = digitalRead(MOTION_SENSOR_PIN);
+
+  static unsigned long lastDebugTime = 0;
+  if (millis() - lastDebugTime > 3000) {
+    Serial.printf("DEBUG - Motion Sensor Reading: %d (0=No Motion, 1=Motion)\n", currentMotion);
+    Serial.printf("DEBUG - wasMotionDetected: %d, motionDetected: %d\n", wasMotionDetected, motionDetected);
+    lastDebugTime = millis();
+  }
+
+  if (currentMotion && !wasMotionDetected) {
+    // New motion event
+    Serial.println("Motion DETECTED! Turning lights ON");
+    lastMotionTime = millis();
+    motionDetected = true;
+    wasMotionDetected = true;
+    turnOnAllLightsFromMotion();
+  } else if (currentMotion) {
+    // Motion continues
+    lastMotionTime = millis();
+    motionDetected = true;
+  } else {
+    // No motion right now
+    motionDetected = false;
+
+    // End of motion session after timeout
+    if (wasMotionDetected && (millis() - lastMotionTime > MOTION_TIMEOUT)) {
+      Serial.println("Motion timeout! No movement for 30 seconds, turning lights OFF");
+      wasMotionDetected = false;
+      turnOffAllLightsFromMotionTimeout();
+    }
+  }
+}
+
 void pollServerState() {
   if (WiFi.status() != WL_CONNECTED) return;
 
@@ -246,88 +199,168 @@ void pollServerState() {
 
   int httpCode = http.GET();
 
-  if (httpCode > 0 && httpCode == HTTP_CODE_OK) {
+  if (httpCode == HTTP_CODE_OK) {
     String payload = http.getString();
     Serial.println("Response: " + payload);
 
-    DynamicJsonDocument doc(2048); // Increase size for multiple classrooms
-    DeserializationError error = deserializeJson(doc, payload);
-    if (error) {
-      Serial.print("JSON parsing failed: ");
-      Serial.println(error.c_str());
+    DynamicJsonDocument doc(4096);
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+      Serial.print("JSON parse failed: ");
+      Serial.println(err.c_str());
+      http.end();
+      return;
+    }
+
+    if (!doc.is<JsonArray>()) {
+      Serial.println("ERROR: Expected JSON array from /api/esp8266/state");
+      http.end();
       return;
     }
 
     JsonArray classrooms = doc.as<JsonArray>();
-    classroomCount = classrooms.size();
+    classroomCount = min((int)classrooms.size(), MAX_CLASSROOMS);
 
-    for (int idx = 0; idx < classrooms.size(); idx++) {
-      JsonObject classroom = classrooms[idx];
-      String name = classroom["name"];
-      String id = classroom["id"];
-      int state = classroom["state"];
-      int pin = classroom["pin"]; // Use pin from JSON
+    for (int idx = 0; idx < classroomCount; idx++) {
+      JsonObject c = classrooms[idx];
 
-      // Store pin and classroom ID
-      if (idx < MAX_CLASSROOMS) {
-        relayPins[idx] = pin;
-        classroomIds[idx] = id;
+      String name = c["name"] | String("Unknown");
+      String id = c["id"] | String("");
+      int pin = c["pin"] | -1;
+      int state = c["state"] | 0; // server command: 1=ON, 0=OFF
+      bool forceOff = c["forceOff"] | false;  // user-initiated force OFF flag
+
+      if (!isValidRelayPin(pin)) {
+        Serial.printf("Skipping invalid pin for %s\n", name.c_str());
+        continue;
       }
 
-      // Initialize pin as OUTPUT (safe even if called repeatedly)
-      pinMode(pin, OUTPUT);
+      // Store mapping
+      relayPins[idx] = pin;
+      classroomIds[idx] = id;
 
-      // Check if manual override is still active for this classroom
-      bool isManualOverrideActive = false;
-      if (idx < MAX_CLASSROOMS && manualOverrideActive[idx]) {
-        unsigned long timeSinceOverride = millis() - manualOverrideTimes[idx];
-        if (timeSinceOverride < MANUAL_OVERRIDE_DURATION) {
-          isManualOverrideActive = true;
-          Serial.printf("Classroom %s: Manual override ACTIVE (expires in %lu seconds)\n", 
-                        name.c_str(), (MANUAL_OVERRIDE_DURATION - timeSinceOverride) / 1000);
-        } else {
-          // Override duration expired
-          manualOverrideActive[idx] = false;
-          Serial.printf("Classroom %s: Manual override EXPIRED, returning to auto mode\n", name.c_str());
+      // Initialize pin once
+      if (!pinInitialized[idx]) {
+        pinMode(pin, OUTPUT);
+        relayOff(pin); // safe default
+        pinInitialized[idx] = true;
+      }
+
+      // Handle force OFF flag
+      if (forceOff && !forceOffState[idx]) {
+        forceOffState[idx] = true;
+        forceOffTimes[idx] = millis();
+        Serial.printf("*** FORCE OFF activated for %s ***\n", name.c_str());
+      }
+
+      // Clear force OFF flag after timeout or if server doesn't send it
+      if (forceOffState[idx] && !forceOff) {
+        unsigned long elapsed = millis() - forceOffTimes[idx];
+        if (elapsed >= 5000) {  // 5 second default timeout for force OFF
+          forceOffState[idx] = false;
+          Serial.printf("*** FORCE OFF expired for %s ***\n", name.c_str());
         }
       }
 
-      // Determine light state
-      bool shouldFollowMotion = motionDetected && wasMotionDetected && !isManualOverrideActive;
       bool serverSaysOn = (state == 1);
-      
-      bool lightShouldBeOn = shouldFollowMotion || (serverSaysOn && !isManualOverrideActive);
+      bool shouldFollowMotion = wasMotionDetected; // motion session active until timeout
 
-      // Update relay / LED based on logic
+      // SIMPLIFIED LOGIC:
+      // 1. If user forced OFF → stay OFF
+      // 2. If server says ON → turn ON
+      // 3. If server says OFF → turn OFF
+      // 4. If motion active and server doesn't say OFF → turn ON
+      bool lightShouldBeOn = false;
+
+      if (forceOffState[idx]) {
+        // Force OFF takes precedence
+        lightShouldBeOn = false;
+      } else if (serverSaysOn) {
+        // Server explicit ON command
+        lightShouldBeOn = true;
+      } else if (shouldFollowMotion) {
+        // Motion active - turn ON unless server explicitly says OFF
+        lightShouldBeOn = true;
+      } else {
+        // Follow server OFF
+        lightShouldBeOn = false;
+      }
+
+      // Apply relay state
       if (lightShouldBeOn) {
-        digitalWrite(pin, 0);  // 0 = Relay activates (ON) for active-LOW relay
+        relayOn(pin);
         relayStates[idx] = true;
-        if (shouldFollowMotion) {
+        if (shouldFollowMotion && !serverSaysOn) {
           Serial.printf("Classroom: %s, Pin: %d, State: ON (Motion active)\n", name.c_str(), pin);
         } else {
           Serial.printf("Classroom: %s, Pin: %d, State: ON (Server command)\n", name.c_str(), pin);
         }
       } else {
-        digitalWrite(pin, 1);  // 1 = Relay deactivates (OFF) for active-LOW relay
+        relayOff(pin);
         relayStates[idx] = false;
-        if (isManualOverrideActive) {
-          Serial.printf("Classroom: %s, Pin: %d, State: OFF (Manual override)\n", name.c_str(), pin);
+        if (forceOffState[idx]) {
+          Serial.printf("Classroom: %s, Pin: %d, State: OFF (Force OFF active)\n", name.c_str(), pin);
         } else {
           Serial.printf("Classroom: %s, Pin: %d, State: OFF (Server)\n", name.c_str(), pin);
         }
       }
-
-      // Detect manual override: Server says OFF but motion sensor wants it ON (and it wasn't ON before)
-      if (!serverSaysOn && motionDetected && !manualOverrideActive[idx] && idx < MAX_CLASSROOMS) {
-        manualOverrideActive[idx] = true;
-        manualOverrideTimes[idx] = millis();
-        Serial.printf("*** MANUAL OVERRIDE DETECTED for %s - respecting user's OFF command for %lu seconds ***\n", 
-                      name.c_str(), MANUAL_OVERRIDE_DURATION / 1000);
-      }
     }
   } else {
-    Serial.printf("HTTP GET failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("HTTP GET failed: %s\n", http.errorToString(httpCode).c_str());
   }
 
   http.end();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(100);
+
+  Serial.println("\n\nClassroom Energy Control System with Motion Sensor");
+  Serial.println("===================================================");
+
+  // Initialize arrays
+  for (int i = 0; i < MAX_CLASSROOMS; i++) {
+    relayPins[i] = -1;
+    classroomIds[i] = "";
+    relayStates[i] = false;
+    pinInitialized[i] = false;
+    forceOffState[i] = false;
+    forceOffTimes[i] = 0;
+  }
+
+  // Motion sensor init
+  pinMode(MOTION_SENSOR_PIN, INPUT);
+  Serial.println("Motion Sensor initialized on pin D2 (GPIO 4)");
+  Serial.println("NOTE: Motion detection is DISABLED - sensor not connected");
+
+  delay(100);
+  int initialReading = digitalRead(MOTION_SENSOR_PIN);
+  Serial.printf("Initial Motion Sensor Reading: %d\n", initialReading);
+
+  // PIR calibration - skip if motion detection disabled
+  if (MOTION_DETECTION_ENABLED) {
+    unsigned long calibrationTime = 60000;
+    Serial.printf("Waiting %lu ms for sensor calibration...\n", calibrationTime);
+    Serial.println("DO NOT move the sensor during calibration!");
+    delay(calibrationTime);
+  } else {
+    Serial.println("Skipping motion sensor calibration (motion detection disabled)");
+  }
+
+  connectToWiFi();
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected. Reconnecting...");
+    connectToWiFi();
+  }
+
+  checkMotionSensor();
+
+  if (millis() - lastPollTime >= POLL_INTERVAL) {
+    lastPollTime = millis();
+    pollServerState();
+  }
 }
