@@ -21,12 +21,14 @@ const char* motionUpdateUrl = "http://192.168.1.6:3000/api/classrooms/motion-upd
 // ============================
 const unsigned long POLL_INTERVAL = 3000;           // 3 sec
 const unsigned long MOTION_TIMEOUT = 30000;         // 30 sec
+const unsigned long MANUAL_OFF_LOCK_MS = 10000;     // 10 sec
 
 // ============================
 // Motion sensor
 // ============================
-#define MOTION_SENSOR_PIN D2 // GPIO4
-#define MOTION_DETECTION_ENABLED false  // Set to true when sensor is connected
+#define MOTION_SENSOR_PIN D1 // GPIO5
+#define MOTION_DETECTION_ENABLED true
+const bool PIR_INVERTED = false;
 
 unsigned long lastPollTime = 0;
 unsigned long lastMotionTime = 0;
@@ -45,6 +47,7 @@ bool relayStates[MAX_CLASSROOMS]; // true = ON, false = OFF
 bool pinInitialized[MAX_CLASSROOMS];
 bool forceOffState[MAX_CLASSROOMS];  // User-initiated force OFF flag
 unsigned long forceOffTimes[MAX_CLASSROOMS];  // Timestamp of force OFF
+bool motionBlockedNotified[MAX_CLASSROOMS]; // avoid repeated blocked ON notifications
 
 int classroomCount = 0;
 
@@ -120,7 +123,18 @@ void notifyServerMotionState(const String& classroomId, const char* action, int 
 void turnOnAllLightsFromMotion() {
   for (int i = 0; i < classroomCount; i++) {
     if (!isValidRelayPin(relayPins[i])) continue;
-    if (forceOffState[i]) continue;  // respect user force OFF
+    if (forceOffState[i]) {
+      if (!motionBlockedNotified[i]) {
+        Serial.printf("Motion detected but FORCE OFF lock active for Pin: %d\n", relayPins[i]);
+        // Notify backend once per lock window so dashboard can show a toast.
+        notifyServerMotionState(classroomIds[i], "ON", relayPins[i]);
+        motionBlockedNotified[i] = true;
+      }
+      continue;
+    }
+
+    motionBlockedNotified[i] = false;
+
     if (!relayStates[i]) {
       relayOn(relayPins[i]);
       relayStates[i] = true;
@@ -152,11 +166,12 @@ void checkMotionSensor() {
     return;
   }
 
-  bool currentMotion = digitalRead(MOTION_SENSOR_PIN);
+  int raw = digitalRead(MOTION_SENSOR_PIN);
+  bool currentMotion = PIR_INVERTED ? (raw == LOW) : (raw == HIGH);
 
   static unsigned long lastDebugTime = 0;
   if (millis() - lastDebugTime > 3000) {
-    Serial.printf("DEBUG - Motion Sensor Reading: %d (0=No Motion, 1=Motion)\n", currentMotion);
+    Serial.printf("DEBUG - Motion Sensor raw=%d motion=%d\n", raw, currentMotion);
     Serial.printf("DEBUG - wasMotionDetected: %d, motionDetected: %d\n", wasMotionDetected, motionDetected);
     lastDebugTime = millis();
   }
@@ -172,6 +187,8 @@ void checkMotionSensor() {
     // Motion continues
     lastMotionTime = millis();
     motionDetected = true;
+    // Retry ON while motion is still present so light can turn ON right after lock expiry.
+    turnOnAllLightsFromMotion();
   } else {
     // No motion right now
     motionDetected = false;
@@ -180,6 +197,9 @@ void checkMotionSensor() {
     if (wasMotionDetected && (millis() - lastMotionTime > MOTION_TIMEOUT)) {
       Serial.println("Motion timeout! No movement for 30 seconds, turning lights OFF");
       wasMotionDetected = false;
+      for (int i = 0; i < classroomCount; i++) {
+        motionBlockedNotified[i] = false;
+      }
       turnOffAllLightsFromMotionTimeout();
     }
   }
@@ -253,10 +273,10 @@ void pollServerState() {
         Serial.printf("*** FORCE OFF activated for %s ***\n", name.c_str());
       }
 
-      // Clear force OFF flag after timeout or if server doesn't send it
-      if (forceOffState[idx] && !forceOff) {
+      // Clear force OFF flag after lock timeout or when server no longer reports lock.
+      if (forceOffState[idx]) {
         unsigned long elapsed = millis() - forceOffTimes[idx];
-        if (elapsed >= 5000) {  // 5 second default timeout for force OFF
+        if (!forceOff || elapsed >= MANUAL_OFF_LOCK_MS) {
           forceOffState[idx] = false;
           Serial.printf("*** FORCE OFF expired for %s ***\n", name.c_str());
         }
@@ -288,8 +308,15 @@ void pollServerState() {
 
       // Apply relay state
       if (lightShouldBeOn) {
+        bool wasRelayOn = relayStates[idx];
         relayOn(pin);
         relayStates[idx] = true;
+
+        if (!wasRelayOn && shouldFollowMotion && !serverSaysOn) {
+          // Keep backend/UI state aligned when ON happens from motion-session logic.
+          notifyServerMotionState(classroomIds[idx], "ON", pin);
+        }
+
         if (shouldFollowMotion && !serverSaysOn) {
           Serial.printf("Classroom: %s, Pin: %d, State: ON (Motion active)\n", name.c_str(), pin);
         } else {
@@ -327,12 +354,13 @@ void setup() {
     pinInitialized[i] = false;
     forceOffState[i] = false;
     forceOffTimes[i] = 0;
+    motionBlockedNotified[i] = false;
   }
 
   // Motion sensor init
   pinMode(MOTION_SENSOR_PIN, INPUT);
-  Serial.println("Motion Sensor initialized on pin D2 (GPIO 4)");
-  Serial.println("NOTE: Motion detection is DISABLED - sensor not connected");
+  Serial.println("Motion Sensor initialized on pin D1 (GPIO 5)");
+  Serial.println("Motion detection is ENABLED");
 
   delay(100);
   int initialReading = digitalRead(MOTION_SENSOR_PIN);
