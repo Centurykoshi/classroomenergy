@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Lightbulb, Power, History, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/Components/ui/card";
 import { Button } from "@/Components/ui/button";
 import { authClient } from "@/lib/authclient";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import GobackButton from "./GoBackButton";
+
+const MANUAL_OFF_LOCK_MS = 10000;
+const DASHBOARD_REFRESH_MS = 3000;
 
 interface ActivityLog {
     id: string;
@@ -35,6 +39,7 @@ export default function DashboardPage() {
     const [showAddForm, setShowAddForm] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [deleting, setDeleting] = useState<string | null>(null);
+    const shownMotionBlockedToasts = useRef<Set<string>>(new Set());
     const [newClassroom, setNewClassroom] = useState({
         name: "",
         description: "",
@@ -54,11 +59,21 @@ export default function DashboardPage() {
         fetchClassrooms();
     }, [session, isPending, router]);
 
+    useEffect(() => {
+        if (!session) return;
+
+        const interval = setInterval(() => {
+            fetchClassrooms();
+        }, DASHBOARD_REFRESH_MS);
+
+        return () => clearInterval(interval);
+    }, [session]);
+
     const fetchClassrooms = async () => {
         try {
             const response = await fetch("/api/classrooms");
             if (response.ok) {
-                const data = await response.json();
+                const data: Classroom[] = await response.json();
                 
                 // Fetch activity logs for each classroom
                 const classroomsWithLogs = await Promise.all(
@@ -66,7 +81,7 @@ export default function DashboardPage() {
                         try {
                             const logsResponse = await fetch(`/api/classrooms/${classroom.id}/logs?limit=5`);
                             if (logsResponse.ok) {
-                                const logs = await logsResponse.json();
+                                const logs: ActivityLog[] = await logsResponse.json();
                                 return { ...classroom, activityLogs: logs };
                             }
                         } catch (error) {
@@ -77,6 +92,27 @@ export default function DashboardPage() {
                 );
                 
                 setClassrooms(classroomsWithLogs);
+
+                classroomsWithLogs.forEach((classroom) => {
+                    const blockedLog = classroom.activityLogs?.find(
+                        (log) => log.action === "MOTION_BLOCKED"
+                    );
+
+                    if (!blockedLog) return;
+                    if (shownMotionBlockedToasts.current.has(blockedLog.id)) return;
+
+                    const blockedAtMs = new Date(blockedLog.createdAt).getTime();
+                    if (Date.now() - blockedAtMs > MANUAL_OFF_LOCK_MS + DASHBOARD_REFRESH_MS) return;
+
+                    shownMotionBlockedToasts.current.add(blockedLog.id);
+                    toast.info(
+                        `${classroom.name}: Motion detected. Change will apply after 10 seconds.`,
+                        {
+                            position: "top-right",
+                            duration: MANUAL_OFF_LOCK_MS,
+                        }
+                    );
+                });
             }
         } catch (error) {
             console.error("Error fetching classrooms:", error);
@@ -112,7 +148,7 @@ export default function DashboardPage() {
                 try {
                     const logsResponse = await fetch(`/api/classrooms/${classroomId}/logs?limit=5`);
                     if (logsResponse.ok) {
-                        const logs = await logsResponse.json();
+                        const logs: ActivityLog[] = await logsResponse.json();
                         setClassrooms(prev => prev.map(c =>
                             c.id === classroomId ? { ...c, activityLogs: logs } : c
                         ));
@@ -438,7 +474,9 @@ export default function DashboardPage() {
                                                                                         className={`inline-block px-2 py-0.5 rounded font-semibold text-xs ${
                                                                                             log.action === "ON"
                                                                                                 ? "bg-green-500/20 text-green-700 dark:text-green-400"
-                                                                                                : "bg-red-500/20 text-red-700 dark:text-red-400"
+                                                                                                : log.action === "MOTION_BLOCKED"
+                                                                                                    ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                                                                                                    : "bg-red-500/20 text-red-700 dark:text-red-400"
                                                                                         }`}
                                                                                     >
                                                                                         {log.action}

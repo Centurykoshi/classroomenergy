@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@/generated/prisma";
 
 const prisma = new PrismaClient();
+const MANUAL_OFF_LOCK_MS = 10000;
 
 // GET endpoint for ESP8266 to poll current state
 export async function GET() {
@@ -18,12 +19,12 @@ export async function GET() {
             }
         });
 
-        // Check for recent FORCE_OFF actions (within last 5 seconds)
+        // Check for recent FORCE_OFF actions (within lock window)
         const recentForceOffs = await prisma.activityLog.findMany({
             where: {
                 action: "FORCE_OFF",
                 createdAt: {
-                    gte: new Date(Date.now() - 5000) // Last 5 seconds
+                    gte: new Date(Date.now() - MANUAL_OFF_LOCK_MS)
                 }
             },
             select: {
