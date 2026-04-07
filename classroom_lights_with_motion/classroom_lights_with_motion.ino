@@ -57,13 +57,13 @@ bool isValidRelayPin(int pin) {
 }
 
 void relayOn(int pin) {
-  // Active-LOW relay: LOW means ON
-  digitalWrite(pin, LOW);
+  // Relay: HIGH turns ON
+  digitalWrite(pin, HIGH);
 }
 
 void relayOff(int pin) {
-  // Active-LOW relay: HIGH means OFF
-  digitalWrite(pin, HIGH);
+  // Relay: LOW turns OFF
+  digitalWrite(pin, LOW);
 }
 
 void connectToWiFi() {
