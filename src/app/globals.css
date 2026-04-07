@@ -40,7 +40,7 @@
   --font-sans: Libre Baskerville, serif;
   --font-serif: Lora, serif;
   --font-mono: IBM Plex Mono, monospace;
-  --radius: 0.25rem;
+  --radius: 0.5rem;
   --shadow-x: 2px;
   --shadow-y: 3px;
   --shadow-blur: 5px;
@@ -57,6 +57,10 @@
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+  --dashboard-gradient-start: oklch(0.97 0.03 88);
+  --dashboard-gradient-middle: oklch(0.95 0.02 82);
+  --dashboard-gradient-end: oklch(0.93 0.03 76);
+  --dashboard-grid-line: color-mix(in oklab, var(--foreground) 10%, transparent);
 }
 
 .dark {
@@ -95,7 +99,7 @@
   --font-sans: Libre Baskerville, serif;
   --font-serif: Lora, serif;
   --font-mono: IBM Plex Mono, monospace;
-  --radius: 0.25rem;
+  --radius: 0.5rem;
   --shadow-x: 2px;
   --shadow-y: 3px;
   --shadow-blur: 5px;
@@ -110,6 +114,80 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.30);
+  --dashboard-gradient-start: oklch(0.25 0.02 255);
+  --dashboard-gradient-middle: oklch(0.28 0.02 220);
+  --dashboard-gradient-end: oklch(0.22 0.02 280);
+  --dashboard-grid-line: color-mix(in oklab, white 8%, transparent);
+}
+
+.classic {
+  --dashboard-gradient-start: oklch(0.97 0.03 88);
+  --dashboard-gradient-middle: oklch(0.95 0.02 82);
+  --dashboard-gradient-end: oklch(0.93 0.03 76);
+}
+
+.green {
+  --background: oklch(0.97 0.015 152);
+  --foreground: oklch(0.30 0.04 151);
+  --card: oklch(0.995 0.01 150);
+  --card-foreground: oklch(0.30 0.04 151);
+  --popover: oklch(0.995 0.01 150);
+  --popover-foreground: oklch(0.30 0.04 151);
+  --primary: oklch(0.57 0.13 148);
+  --primary-foreground: oklch(0.995 0.01 150);
+  --secondary: oklch(0.90 0.03 153);
+  --secondary-foreground: oklch(0.30 0.04 151);
+  --muted: oklch(0.94 0.02 149);
+  --muted-foreground: oklch(0.49 0.03 147);
+  --accent: oklch(0.86 0.06 132);
+  --accent-foreground: oklch(0.28 0.04 151);
+  --border: oklch(0.86 0.025 150);
+  --input: oklch(0.86 0.025 150);
+  --ring: oklch(0.57 0.13 148);
+  --sidebar: oklch(0.93 0.02 152);
+  --sidebar-foreground: oklch(0.30 0.04 151);
+  --sidebar-primary: oklch(0.57 0.13 148);
+  --sidebar-primary-foreground: oklch(0.995 0.01 150);
+  --sidebar-accent: oklch(0.86 0.06 132);
+  --sidebar-accent-foreground: oklch(0.28 0.04 151);
+  --sidebar-border: oklch(0.86 0.025 150);
+  --sidebar-ring: oklch(0.57 0.13 148);
+  --dashboard-gradient-start: oklch(0.97 0.03 145);
+  --dashboard-gradient-middle: oklch(0.94 0.04 136);
+  --dashboard-gradient-end: oklch(0.90 0.05 125);
+  --dashboard-grid-line: color-mix(in oklab, var(--primary) 18%, transparent);
+}
+
+.sunset {
+  --background: oklch(0.97 0.018 52);
+  --foreground: oklch(0.34 0.05 28);
+  --card: oklch(0.995 0.01 54);
+  --card-foreground: oklch(0.34 0.05 28);
+  --popover: oklch(0.995 0.01 54);
+  --popover-foreground: oklch(0.34 0.05 28);
+  --primary: oklch(0.62 0.17 42);
+  --primary-foreground: oklch(0.995 0.01 54);
+  --secondary: oklch(0.90 0.04 64);
+  --secondary-foreground: oklch(0.34 0.05 28);
+  --muted: oklch(0.94 0.02 58);
+  --muted-foreground: oklch(0.53 0.04 35);
+  --accent: oklch(0.86 0.07 84);
+  --accent-foreground: oklch(0.34 0.05 28);
+  --border: oklch(0.86 0.03 52);
+  --input: oklch(0.86 0.03 52);
+  --ring: oklch(0.62 0.17 42);
+  --sidebar: oklch(0.93 0.03 55);
+  --sidebar-foreground: oklch(0.34 0.05 28);
+  --sidebar-primary: oklch(0.62 0.17 42);
+  --sidebar-primary-foreground: oklch(0.995 0.01 54);
+  --sidebar-accent: oklch(0.86 0.07 84);
+  --sidebar-accent-foreground: oklch(0.34 0.05 28);
+  --sidebar-border: oklch(0.86 0.03 52);
+  --sidebar-ring: oklch(0.62 0.17 42);
+  --dashboard-gradient-start: oklch(0.97 0.03 58);
+  --dashboard-gradient-middle: oklch(0.94 0.05 38);
+  --dashboard-gradient-end: oklch(0.90 0.06 24);
+  --dashboard-grid-line: color-mix(in oklab, var(--primary) 16%, transparent);
 }
 
 @theme inline {
@@ -172,4 +250,24 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+.dashboard-shell {
+  background:
+    radial-gradient(circle at 15% -5%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 42%),
+    radial-gradient(circle at 82% 2%, color-mix(in oklab, var(--accent) 20%, transparent), transparent 35%),
+    linear-gradient(145deg, var(--dashboard-gradient-start), var(--dashboard-gradient-middle) 45%, var(--dashboard-gradient-end));
+  position: relative;
+}
+
+.dashboard-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--dashboard-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--dashboard-grid-line) 1px, transparent 1px);
+  background-size: 36px 36px;
+  opacity: 0.22;
 }
