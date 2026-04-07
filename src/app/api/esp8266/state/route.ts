@@ -18,12 +18,28 @@ export async function GET() {
             }
         });
 
+        // Check for recent FORCE_OFF actions (within last 5 seconds)
+        const recentForceOffs = await prisma.activityLog.findMany({
+            where: {
+                action: "FORCE_OFF",
+                createdAt: {
+                    gte: new Date(Date.now() - 5000) // Last 5 seconds
+                }
+            },
+            select: {
+                classroomId: true
+            }
+        });
+
+        const forceOffClassroomIds = new Set(recentForceOffs.map(log => log.classroomId));
+
         // Format response for ESP8266
         const response = classrooms.map(classroom => ({
             id: classroom.id,
             name: classroom.name,
             pin: classroom.arduinoPin || 0,
-            state: classroom.isLightOn ? 1 : 0
+            state: classroom.isLightOn ? 1 : 0,
+            forceOff: forceOffClassroomIds.has(classroom.id)
         }));
 
         return NextResponse.json(response);

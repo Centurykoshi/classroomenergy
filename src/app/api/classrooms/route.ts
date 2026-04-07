@@ -46,3 +46,46 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+
+// DELETE a classroom
+export async function DELETE(request: NextRequest) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const classroomId = searchParams.get("id");
+
+        if (!classroomId) {
+            return NextResponse.json(
+                { error: "Classroom ID is required" },
+                { status: 400 }
+            );
+        }
+
+        // Verify classroom exists
+        const classroom = await prisma.classroom.findUnique({
+            where: { id: classroomId }
+        });
+
+        if (!classroom) {
+            return NextResponse.json(
+                { error: "Classroom not found" },
+                { status: 404 }
+            );
+        }
+
+        // Delete classroom (cascade will auto-delete activity logs)
+        await prisma.classroom.delete({
+            where: { id: classroomId }
+        });
+
+        return NextResponse.json({
+            success: true,
+            message: `Classroom "${classroom.name}" deleted successfully`
+        });
+    } catch (error) {
+        console.error("Error deleting classroom:", error);
+        return NextResponse.json(
+            { error: "Failed to delete classroom" },
+            { status: 500 }
+        );
+    }
+}

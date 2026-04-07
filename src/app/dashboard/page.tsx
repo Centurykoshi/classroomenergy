@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Lightbulb, Power, History, Plus } from "lucide-react";
+import { Lightbulb, Power, History, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/Components/ui/card";
 import { Button } from "@/Components/ui/button";
 import { authClient } from "@/lib/authclient";
@@ -33,6 +33,8 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [toggling, setToggling] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState<string | null>(null);
     const [newClassroom, setNewClassroom] = useState({
         name: "",
         description: "",
@@ -83,7 +85,7 @@ export default function DashboardPage() {
         }
     };
 
-    const toggleLight = async (classroomId: string, currentState: boolean) => {
+    const toggleLight = async (classroomId: string, currentState: boolean, force: boolean = false) => {
         setToggling(classroomId);
         try {
             const response = await fetch(`/api/classrooms/${classroomId}/toggle`, {
@@ -92,16 +94,18 @@ export default function DashboardPage() {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    action: currentState ? "OFF" : "ON",
+                    action: force ? "OFF" : (currentState ? "OFF" : "ON"),
                     userId: session?.user?.id,
                     userName: session?.user?.name || session?.user?.email,
+                    force: force,
                 }),
             });
 
             if (response.ok) {
                 // Update local state
+                const newState = force ? false : !currentState;
                 setClassrooms(classrooms.map(c =>
-                    c.id === classroomId ? { ...c, isLightOn: !currentState } : c
+                    c.id === classroomId ? { ...c, isLightOn: newState } : c
                 ));
 
                 // Refresh activity logs for this classroom
@@ -143,6 +147,33 @@ export default function DashboardPage() {
             }
         } catch (error) {
             console.error("Error adding classroom:", error);
+        }
+    };
+
+    const handleDeleteClassroom = async (classroomId: string) => {
+        setDeleting(classroomId);
+        try {
+            const response = await fetch(`/api/classrooms?id=${classroomId}`, {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            });
+
+            if (response.ok) {
+                // Remove classroom from state
+                setClassrooms(classrooms.filter(c => c.id !== classroomId));
+                setDeleteConfirmId(null);
+            } else {
+                const error = await response.json();
+                console.error("Error deleting classroom:", error);
+                alert("Failed to delete classroom");
+            }
+        } catch (error) {
+            console.error("Error deleting classroom:", error);
+            alert("Failed to delete classroom");
+        } finally {
+            setDeleting(null);
         }
     };
 
@@ -335,6 +366,58 @@ export default function DashboardPage() {
                                                                     ? "Turn OFF"
                                                                     : "Turn ON"}
                                                         </Button>
+
+                                                        {classroom.isLightOn && (
+                                                            <Button
+                                                                onClick={() => toggleLight(classroom.id, true, true)}
+                                                                disabled={toggling === classroom.id}
+                                                                variant="destructive"
+                                                                className="w-full"
+                                                            >
+                                                                <Power className="w-4 h-4 mr-2" />
+                                                                {toggling === classroom.id ? "Processing..." : "Force OFF"}
+                                                            </Button>
+                                                        )}
+
+                                                        <Button
+                                                            onClick={() => setDeleteConfirmId(classroom.id)}
+                                                            disabled={deleting === classroom.id}
+                                                            variant="destructive"
+                                                            className="w-full"
+                                                        >
+                                                            <Trash2 className="w-4 h-4 mr-2" />
+                                                            {deleting === classroom.id ? "Deleting..." : "Delete Classroom"}
+                                                        </Button>
+
+                                                        {/* Delete Confirmation Modal */}
+                                                        {deleteConfirmId === classroom.id && (
+                                                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                                                                <Card className="w-96">
+                                                                    <CardHeader>
+                                                                        <CardTitle>Delete Classroom?</CardTitle>
+                                                                        <CardDescription>
+                                                                            Are you sure you want to delete "{classroom.name}"? This action cannot be undone. All activity logs for this classroom will also be deleted.
+                                                                        </CardDescription>
+                                                                    </CardHeader>
+                                                                    <CardContent className="flex gap-3 justify-end">
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            onClick={() => setDeleteConfirmId(null)}
+                                                                            disabled={deleting === classroom.id}
+                                                                        >
+                                                                            Cancel
+                                                                        </Button>
+                                                                        <Button
+                                                                            variant="destructive"
+                                                                            onClick={() => handleDeleteClassroom(classroom.id)}
+                                                                            disabled={deleting === classroom.id}
+                                                                        >
+                                                                            {deleting === classroom.id ? "Deleting..." : "Delete"}
+                                                                        </Button>
+                                                                    </CardContent>
+                                                                </Card>
+                                                            </div>
+                                                        )}
 
                                                         {/* Activity History */}
                                                         <div className="mt-6 pt-4 border-t">

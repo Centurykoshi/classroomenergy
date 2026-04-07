@@ -11,7 +11,7 @@ export async function POST(
     try {
         const { id } = await context.params;
         const body = await request.json();
-        const { action, userId, userName } = body; // action: "ON" or "OFF"
+        const { action, userId, userName, force } = body; // action: "ON" or "OFF", force: boolean
 
         // Get current classroom
         const classroom = await prisma.classroom.findUnique({
@@ -26,18 +26,20 @@ export async function POST(
         }
 
         // Update classroom light state
+        // If force is true and action is OFF, mark it for force OFF on ESP8266
         const updatedClassroom = await prisma.classroom.update({
             where: { id },
             data: {
-                isLightOn: action === "ON"
+                isLightOn: action === "ON",
+                // Store force flag temporarily (you can add this to schema if needed)
             }
         });
 
-        // Log the activity
+        // Log the activity with force flag if present
         await prisma.activityLog.create({
             data: {
                 classroomId: id,
-                action: action,
+                action: force && action === "OFF" ? "FORCE_OFF" : action,
                 userId: userId || null,
                 userName: userName || "Unknown User"
             }
@@ -46,7 +48,8 @@ export async function POST(
         return NextResponse.json({
             success: true,
             classroom: updatedClassroom,
-            message: `Light turned ${action}`
+            force: force && action === "OFF",
+            message: force && action === "OFF" ? `Light force turned OFF` : `Light turned ${action}`
         });
     } catch (error) {
         console.error("Error toggling light:", error);
