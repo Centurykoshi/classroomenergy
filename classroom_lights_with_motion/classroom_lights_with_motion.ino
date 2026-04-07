@@ -27,6 +27,8 @@ bool wasMotionDetected = false;
 unsigned long testModeStartTime = 0;
 const unsigned long TEST_DURATION = 10000;  // 10 seconds
 
+//work 
+
 // Store relay pin states and classroom IDs
 const int MAX_CLASSROOMS = 10;
 int relayPins[MAX_CLASSROOMS];
