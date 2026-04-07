@@ -182,6 +182,11 @@ void checkMotionSensor() {
     motionDetected = true;
     wasMotionDetected = true;
     turnOnAllLightsFromMotion();
+
+    // Fast-path: poll immediately so the relay follows the server state
+    // without waiting up to POLL_INTERVAL.
+    pollServerState();
+    lastPollTime = millis();
   } else if (currentMotion) {
     // Motion continues
     lastMotionTime = millis();

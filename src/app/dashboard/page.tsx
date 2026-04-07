@@ -25,6 +25,13 @@ import {
 } from "@/Components/dashboard/types";
 
 const DASHBOARD_REFRESH_MS = 3000;
+const ACTIVITY_SUMMARY_REFRESH_MS = 30000;
+
+type ActivitySummary = {
+  day: { on: number; off: number };
+  week: { on: number; off: number };
+  month: { on: number; off: number };
+};
 
 function getLatestActionTime(classroom: Classroom, action: string): number | null {
   const logs = classroom.activityLogs ?? [];
@@ -69,6 +76,7 @@ export default function DashboardPage() {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary | null>(null);
 
   const lockStateRef = useRef<Map<string, boolean>>(new Map());
 
@@ -87,6 +95,14 @@ export default function DashboardPage() {
       void fetchClassrooms();
     }, DASHBOARD_REFRESH_MS);
     return () => clearInterval(refreshTimer);
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    const summaryTimer = setInterval(() => {
+      void fetchActivitySummary();
+    }, ACTIVITY_SUMMARY_REFRESH_MS);
+    return () => clearInterval(summaryTimer);
   }, [session]);
 
   useEffect(() => {
@@ -121,6 +137,9 @@ export default function DashboardPage() {
       setIsConnected(true);
       setLastSyncedAt(new Date());
 
+  // Keep summary reasonably fresh without coupling to per-classroom log fetches.
+  void fetchActivitySummary();
+
       classroomsWithLogs.forEach((classroom) => {
         const lockRemaining = getLockRemainingMs(classroom, Date.now());
         const lockActiveNow = lockRemaining > 0;
@@ -146,6 +165,19 @@ export default function DashboardPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchActivitySummary = async () => {
+    try {
+      const response = await fetch("/api/activity/summary");
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { day: ActivitySummary["day"]; week: ActivitySummary["week"]; month: ActivitySummary["month"] };
+      if (!data?.day || !data?.week || !data?.month) return;
+      setActivitySummary({ day: data.day, week: data.week, month: data.month });
+    } catch {
+      // Non-critical; ignore.
     }
   };
 
@@ -257,15 +289,6 @@ export default function DashboardPage() {
     } satisfies Record<DashboardFilter, number>;
   }, [enrichedClassrooms]);
 
-  const blockedTodayCount = useMemo(() => {
-    return enrichedClassrooms.reduce((sum, classroom) => {
-      const blocked = (classroom.activityLogs ?? []).filter(
-        (log) => log.action === "MOTION_BLOCKED" && isToday(log.createdAt)
-      ).length;
-      return sum + blocked;
-    }, 0);
-  }, [enrichedClassrooms]);
-
   const filteredClassrooms = useMemo(() => {
     if (activeFilter === "all") return enrichedClassrooms;
     if (activeFilter === "on") return enrichedClassrooms.filter((c) => c.isLightOn);
@@ -316,7 +339,7 @@ export default function DashboardPage() {
             total={counts.all}
             onCount={counts.on}
             lockedCount={counts.locked}
-            blockedToday={blockedTodayCount}
+            activity={activitySummary ?? undefined}
           />
 
           <div className="my-5 flex flex-wrap items-center justify-between gap-3">

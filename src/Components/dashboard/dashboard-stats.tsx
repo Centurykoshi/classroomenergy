@@ -5,10 +5,14 @@ interface DashboardStatsProps {
   total: number;
   onCount: number;
   lockedCount: number;
-  blockedToday: number;
+  activity?: {
+    day: { on: number; off: number };
+    week: { on: number; off: number };
+    month: { on: number; off: number };
+  };
 }
 
-export function DashboardStats({ total, onCount, lockedCount, blockedToday }: DashboardStatsProps) {
+export function DashboardStats({ total, onCount, lockedCount, activity }: DashboardStatsProps) {
   const offCount = Math.max(total - onCount, 0);
 
   return (
@@ -50,9 +54,17 @@ export function DashboardStats({ total, onCount, lockedCount, blockedToday }: Da
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Blocked Today</p>
-              <p className="text-2xl font-semibold">{blockedToday}</p>
-              <p className="text-xs text-muted-foreground">Active locks: {lockedCount}</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Activity</p>
+              <p className="text-xs text-muted-foreground">
+                Today: {activity?.day.on ?? 0} ON / {activity?.day.off ?? 0} OFF
+              </p>
+              <p className="text-xs text-muted-foreground">
+                7d: {activity?.week.on ?? 0} ON / {activity?.week.off ?? 0} OFF
+              </p>
+              <p className="text-xs text-muted-foreground">
+                30d: {activity?.month.on ?? 0} ON / {activity?.month.off ?? 0} OFF
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">Active locks: {lockedCount}</p>
             </div>
             <AlertTriangle className="h-5 w-5 text-accent-foreground" />
           </div>
