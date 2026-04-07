@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { PrismaClient } from "@/generated/prisma";
 
 const prisma = new PrismaClient();
@@ -19,6 +19,38 @@ export async function GET() {
             }
         });
 
+        // Manual lock = any recent manual command within the lock window.
+        // This allows the ESP8266 to avoid spamming motion intents during the window.
+        const lockStartedAt = new Date(Date.now() - MANUAL_OFF_LOCK_MS);
+        const recentManualCommands = await prisma.activityLog.findMany({
+            where: {
+                action: {
+                    in: ["ON", "OFF", "FORCE_OFF"]
+                },
+                createdAt: {
+                    gte: lockStartedAt
+                },
+                NOT: {
+                    userName: "Motion Sensor (Auto)"
+                }
+            },
+            select: {
+                classroomId: true,
+                action: true,
+                createdAt: true
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+
+        const latestManualByClassroom = new Map<string, { action: string; createdAt: Date }>();
+        for (const log of recentManualCommands) {
+            if (!latestManualByClassroom.has(log.classroomId)) {
+                latestManualByClassroom.set(log.classroomId, { action: log.action, createdAt: log.createdAt });
+            }
+        }
+
         // Check for recent FORCE_OFF actions (within lock window)
         const recentForceOffs = await prisma.activityLog.findMany({
             where: {
@@ -35,13 +67,24 @@ export async function GET() {
         const forceOffClassroomIds = new Set(recentForceOffs.map(log => log.classroomId));
 
         // Format response for ESP8266
-        const response = classrooms.map(classroom => ({
+        const nowMs = Date.now();
+        const response = classrooms.map(classroom => {
+            const latestManual = latestManualByClassroom.get(classroom.id);
+            const manualLockRemainingMs = latestManual
+                ? Math.max(0, MANUAL_OFF_LOCK_MS - (nowMs - latestManual.createdAt.getTime()))
+                : 0;
+
+            return {
             id: classroom.id,
             name: classroom.name,
             pin: classroom.arduinoPin || 0,
             state: classroom.isLightOn ? 1 : 0,
-            forceOff: forceOffClassroomIds.has(classroom.id)
-        }));
+            forceOff: forceOffClassroomIds.has(classroom.id),
+            manualLock: manualLockRemainingMs > 0,
+            manualLockAction: latestManual?.action ?? null,
+            manualLockRemainingMs
+            };
+        });
 
         return NextResponse.json(response);
     } catch (error) {

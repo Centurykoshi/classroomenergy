@@ -70,7 +70,6 @@ export default function DashboardPage() {
   const [isConnected, setIsConnected] = useState(true);
   const [nowMs, setNowMs] = useState(Date.now());
 
-  const shownMotionBlockedToasts = useRef<Set<string>>(new Set());
   const lockStateRef = useRef<Map<string, boolean>>(new Map());
 
   useEffect(() => {
@@ -123,18 +122,6 @@ export default function DashboardPage() {
       setLastSyncedAt(new Date());
 
       classroomsWithLogs.forEach((classroom) => {
-        const blockedLog = classroom.activityLogs?.find((log) => log.action === "MOTION_BLOCKED");
-        if (blockedLog && !shownMotionBlockedToasts.current.has(blockedLog.id)) {
-          const blockedAtMs = new Date(blockedLog.createdAt).getTime();
-          if (Date.now() - blockedAtMs <= MANUAL_OFF_LOCK_MS + DASHBOARD_REFRESH_MS) {
-            shownMotionBlockedToasts.current.add(blockedLog.id);
-            toast.info(`${classroom.name}: Motion detected. Change will apply after 10 seconds.`, {
-              position: "top-right",
-              duration: MANUAL_OFF_LOCK_MS,
-            });
-          }
-        }
-
         const lockRemaining = getLockRemainingMs(classroom, Date.now());
         const lockActiveNow = lockRemaining > 0;
         const lockActiveBefore = lockStateRef.current.get(classroom.id) ?? false;
@@ -163,6 +150,7 @@ export default function DashboardPage() {
   };
 
   const toggleLight = async (classroomId: string, currentState: boolean, force = false) => {
+    const requestForce = force;
     setToggling(classroomId);
     try {
       const response = await fetch(`/api/classrooms/${classroomId}/toggle`, {
@@ -171,10 +159,10 @@ export default function DashboardPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          action: force ? "OFF" : currentState ? "OFF" : "ON",
+          action: currentState ? "OFF" : "ON",
           userId: session?.user?.id,
           userName: session?.user?.name || session?.user?.email,
-          force,
+          force: requestForce,
         }),
       });
 
@@ -182,7 +170,7 @@ export default function DashboardPage() {
         throw new Error("Failed to toggle light");
       }
 
-      if (force) {
+      if (requestForce) {
         const target = classrooms.find((c) => c.id === classroomId);
         if (target) {
           toast.warning(`${target.name}: Manual lock started for 10 seconds.`, {

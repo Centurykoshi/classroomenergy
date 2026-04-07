@@ -22,6 +22,7 @@ const char* motionUpdateUrl = "http://192.168.1.6:3000/api/classrooms/motion-upd
 const unsigned long POLL_INTERVAL = 3000;           // 3 sec
 const unsigned long MOTION_TIMEOUT = 30000;         // 30 sec
 const unsigned long MANUAL_OFF_LOCK_MS = 10000;     // 10 sec
+const unsigned long MOTION_REQUEST_RETRY_MS = 2000; // throttle ON intent retries
 
 // ============================
 // Motion sensor
@@ -48,6 +49,8 @@ bool pinInitialized[MAX_CLASSROOMS];
 bool forceOffState[MAX_CLASSROOMS];  // User-initiated force OFF flag
 unsigned long forceOffTimes[MAX_CLASSROOMS];  // Timestamp of force OFF
 bool motionBlockedNotified[MAX_CLASSROOMS]; // avoid repeated blocked ON notifications
+bool manualLockActive[MAX_CLASSROOMS]; // true while a recent manual command lock window is active
+unsigned long lastMotionOnRequestAt[MAX_CLASSROOMS]; // throttle ON intents while motion continues
 
 int classroomCount = 0;
 
@@ -123,23 +126,15 @@ void notifyServerMotionState(const String& classroomId, const char* action, int 
 void turnOnAllLightsFromMotion() {
   for (int i = 0; i < classroomCount; i++) {
     if (!isValidRelayPin(relayPins[i])) continue;
-    if (forceOffState[i]) {
-      if (!motionBlockedNotified[i]) {
-        Serial.printf("Motion detected but FORCE OFF lock active for Pin: %d\n", relayPins[i]);
-        // Notify backend once per lock window so dashboard can show a toast.
-        notifyServerMotionState(classroomIds[i], "ON", relayPins[i]);
-        motionBlockedNotified[i] = true;
-      }
-      continue;
-    }
 
-    motionBlockedNotified[i] = false;
+    // While a manual lock is active, don't send motion intents.
+    // The backend is holding a user-requested state and will ignore sensor updates anyway.
+    if (manualLockActive[i] || forceOffState[i]) continue;
 
-    if (!relayStates[i]) {
-      relayOn(relayPins[i]);
-      relayStates[i] = true;
-      Serial.printf("Light ON (motion) - Pin: %d\n", relayPins[i]);
+    if (millis() - lastMotionOnRequestAt[i] >= MOTION_REQUEST_RETRY_MS) {
+      Serial.printf("Motion intent ON sent - Pin: %d\n", relayPins[i]);
       notifyServerMotionState(classroomIds[i], "ON", relayPins[i]);
+      lastMotionOnRequestAt[i] = millis();
     }
   }
 }
@@ -147,12 +142,16 @@ void turnOnAllLightsFromMotion() {
 void turnOffAllLightsFromMotionTimeout() {
   for (int i = 0; i < classroomCount; i++) {
     if (!isValidRelayPin(relayPins[i])) continue;
-    if (relayStates[i]) {
-      relayOff(relayPins[i]);
-      relayStates[i] = false;
-      Serial.printf("Light OFF (motion timeout) - Pin: %d\n", relayPins[i]);
+
+    // While a manual lock is active, don't send motion intents.
+    if (manualLockActive[i] || forceOffState[i]) continue;
+
+    if (relayStates[i] || lastMotionOnRequestAt[i] > 0) {
+      Serial.printf("Motion timeout intent OFF sent - Pin: %d\n", relayPins[i]);
       notifyServerMotionState(classroomIds[i], "OFF", relayPins[i]);
     }
+
+    lastMotionOnRequestAt[i] = 0;
   }
 }
 
@@ -197,9 +196,6 @@ void checkMotionSensor() {
     if (wasMotionDetected && (millis() - lastMotionTime > MOTION_TIMEOUT)) {
       Serial.println("Motion timeout! No movement for 30 seconds, turning lights OFF");
       wasMotionDetected = false;
-      for (int i = 0; i < classroomCount; i++) {
-        motionBlockedNotified[i] = false;
-      }
       turnOffAllLightsFromMotionTimeout();
     }
   }
@@ -249,6 +245,7 @@ void pollServerState() {
       int pin = c["pin"] | -1;
       int state = c["state"] | 0; // server command: 1=ON, 0=OFF
       bool forceOff = c["forceOff"] | false;  // user-initiated force OFF flag
+      bool manualLock = c["manualLock"] | false;
 
       if (!isValidRelayPin(pin)) {
         Serial.printf("Skipping invalid pin for %s\n", name.c_str());
@@ -266,67 +263,28 @@ void pollServerState() {
         pinInitialized[idx] = true;
       }
 
-      // Handle force OFF flag
-      if (forceOff && !forceOffState[idx]) {
-        forceOffState[idx] = true;
-        forceOffTimes[idx] = millis();
-        Serial.printf("*** FORCE OFF activated for %s ***\n", name.c_str());
-      }
-
-      // Clear force OFF flag after lock timeout or when server no longer reports lock.
-      if (forceOffState[idx]) {
-        unsigned long elapsed = millis() - forceOffTimes[idx];
-        if (!forceOff || elapsed >= MANUAL_OFF_LOCK_MS) {
-          forceOffState[idx] = false;
-          Serial.printf("*** FORCE OFF expired for %s ***\n", name.c_str());
-        }
-      }
+      // The server is the single source of truth for the lock state.
+      // This simplifies the logic and avoids clock drift issues.
+      forceOffState[idx] = forceOff;
+      manualLockActive[idx] = manualLock;
 
       bool serverSaysOn = (state == 1);
-      bool shouldFollowMotion = wasMotionDetected; // motion session active until timeout
 
-      // SIMPLIFIED LOGIC:
-      // 1. If user forced OFF → stay OFF
-      // 2. If server says ON → turn ON
-      // 3. If server says OFF → turn OFF
-      // 4. If motion active and server doesn't say OFF → turn ON
-      bool lightShouldBeOn = false;
-
-      if (forceOffState[idx]) {
-        // Force OFF takes precedence
-        lightShouldBeOn = false;
-      } else if (serverSaysOn) {
-        // Server explicit ON command
-        lightShouldBeOn = true;
-      } else if (shouldFollowMotion) {
-        // Motion active - turn ON unless server explicitly says OFF
-        lightShouldBeOn = true;
-      } else {
-        // Follow server OFF
-        lightShouldBeOn = false;
-      }
+      // Backend is the source of truth: sensor sends intents, server decides final ON/OFF.
+      bool lightShouldBeOn = serverSaysOn && !forceOffState[idx];
 
       // Apply relay state
       if (lightShouldBeOn) {
-        bool wasRelayOn = relayStates[idx];
         relayOn(pin);
         relayStates[idx] = true;
-
-        if (!wasRelayOn && shouldFollowMotion && !serverSaysOn) {
-          // Keep backend/UI state aligned when ON happens from motion-session logic.
-          notifyServerMotionState(classroomIds[idx], "ON", pin);
-        }
-
-        if (shouldFollowMotion && !serverSaysOn) {
-          Serial.printf("Classroom: %s, Pin: %d, State: ON (Motion active)\n", name.c_str(), pin);
-        } else {
-          Serial.printf("Classroom: %s, Pin: %d, State: ON (Server command)\n", name.c_str(), pin);
-        }
+        Serial.printf("Classroom: %s, Pin: %d, State: ON (Server)\n", name.c_str(), pin);
       } else {
         relayOff(pin);
         relayStates[idx] = false;
         if (forceOffState[idx]) {
           Serial.printf("Classroom: %s, Pin: %d, State: OFF (Force OFF active)\n", name.c_str(), pin);
+        } else if (manualLockActive[idx]) {
+          Serial.printf("Classroom: %s, Pin: %d, State: OFF (Manual lock active)\n", name.c_str(), pin);
         } else {
           Serial.printf("Classroom: %s, Pin: %d, State: OFF (Server)\n", name.c_str(), pin);
         }
@@ -355,6 +313,8 @@ void setup() {
     forceOffState[i] = false;
     forceOffTimes[i] = 0;
     motionBlockedNotified[i] = false;
+    manualLockActive[i] = false;
+    lastMotionOnRequestAt[i] = 0;
   }
 
   // Motion sensor init

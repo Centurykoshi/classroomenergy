@@ -15,7 +15,10 @@ export async function GET(
 
         const logs = await prisma.activityLog.findMany({
             where: {
-                classroomId: id
+                classroomId: id,
+                NOT: {
+                    action: "MOTION_BLOCKED"
+                }
             },
             orderBy: {
                 createdAt: "desc"

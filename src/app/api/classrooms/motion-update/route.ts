@@ -3,7 +3,6 @@ import { PrismaClient } from "@/generated/prisma";
 
 const prisma = new PrismaClient();
 const MANUAL_OFF_LOCK_MS = 10000;
-const MOTION_BLOCKED_ACTION = "MOTION_BLOCKED";
 
 // POST endpoint for ESP8266 to report motion-triggered state changes
 export async function POST(request: NextRequest) {
@@ -31,49 +30,32 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // If manual FORCE_OFF is active, motion-triggered ON must be ignored.
-        if (normalizedAction === "ON") {
-            const lockStartedAt = new Date(Date.now() - MANUAL_OFF_LOCK_MS);
-
-            const latestForceOff = await prisma.activityLog.findFirst({
-                where: {
-                    classroomId,
-                    action: "FORCE_OFF",
-                    createdAt: {
-                        gte: lockStartedAt
-                    }
+        // Respect recent manual commands for the lock window so sensor events don't instantly undo UI actions.
+        const lockStartedAt = new Date(Date.now() - MANUAL_OFF_LOCK_MS);
+        const latestManualCommand = await prisma.activityLog.findFirst({
+            where: {
+                classroomId,
+                action: {
+                    in: ["ON", "OFF", "FORCE_OFF"]
                 },
-                orderBy: {
-                    createdAt: "desc"
+                createdAt: {
+                    gte: lockStartedAt
+                },
+                NOT: {
+                    userName: "Motion Sensor (Auto)"
                 }
-            });
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
 
-            if (latestForceOff) {
-                const existingBlockedLog = await prisma.activityLog.findFirst({
-                    where: {
-                        classroomId,
-                        action: MOTION_BLOCKED_ACTION,
-                        createdAt: {
-                            gte: latestForceOff.createdAt
-                        }
-                    },
-                    orderBy: {
-                        createdAt: "desc"
-                    }
-                });
+        if (latestManualCommand) {
+            const manualTargetOn = latestManualCommand.action === "ON";
+            const sensorTargetOn = normalizedAction === "ON";
 
-                if (!existingBlockedLog) {
-                    await prisma.activityLog.create({
-                        data: {
-                            classroomId,
-                            action: MOTION_BLOCKED_ACTION,
-                            userId: null,
-                            userName: "Motion Sensor (Blocked by Manual OFF)"
-                        }
-                    });
-                }
-
-                const elapsed = Date.now() - latestForceOff.createdAt.getTime();
+            if (manualTargetOn !== sensorTargetOn) {
+                const elapsed = Date.now() - latestManualCommand.createdAt.getTime();
                 const lockRemainingMs = Math.max(0, MANUAL_OFF_LOCK_MS - elapsed);
 
                 return NextResponse.json({
@@ -82,7 +64,8 @@ export async function POST(request: NextRequest) {
                     motionBlockedByLock: true,
                     lockWindowMs: MANUAL_OFF_LOCK_MS,
                     lockRemainingMs,
-                    message: `Motion detected, manual OFF lock active for ${Math.ceil(lockRemainingMs / 1000)} more seconds`
+                    manualCommandAction: latestManualCommand.action,
+                    message: "Sensor event ignored due to a recent manual command"
                 });
             }
         }
